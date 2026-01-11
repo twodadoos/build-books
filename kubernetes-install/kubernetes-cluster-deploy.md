@@ -1,3 +1,5 @@
+# For each node - Control Plane and Worker
+
 ## Pre-deployment
 
 1.  Backup /etc/fstab file
@@ -39,9 +41,24 @@ apt install -y curl gnupg2 software-properties-common apt-transport-https ca-cer
 ```
 5.  Configure Docker repository
 ```
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmour -o /etc/apt/trusted.gpg.d/docker.gpg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/docker.gpg
 
-add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+add-apt-repository -y "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+```
+6.  Configure Kubernetes repository
+```
+sudo bash -c '
+LATEST_K8S_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt | sed "s/^v//")
+K8S_MAJOR_MINOR=$(echo "$LATEST_K8S_VERSION" | cut -d "." -f 1,2)
+K8S_REPO="https://pkgs.k8s.io/core:/stable:/v${K8S_MAJOR_MINOR}/deb/"
+curl -fsSL "${K8S_REPO}Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+touch /etc/apt/sources.list.d/kubernetes.list
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] ${K8S_REPO} /" > /etc/apt/sources.list.d/kubernetes.list
+'
+```
+7.  Update apt packages
+```
+apt update
 ```
 ## Deployment
 1.  Install and configure containerd
@@ -58,14 +75,9 @@ systemctl restart containerd.service
 
 systemctl enable containerd.service
 ```
-2.  Install and configure kubernetes
+
+3.  Install and configure kubernetes
 ```
-curl -fsSL "${K8S_REPO}Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-touch /etc/apt/sources.list.d/kubernetes.list
-
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] ${K8S_REPO} /" > /etc/apt/sources.list.d/kubernetes.list
-
 apt update
 
 apt install -y kubelet kubeadm kubectl
@@ -74,3 +86,4 @@ apt-mark hold kubelet kubeadm kubectl
 
 systemctl enable kubelet.service
 ```
+# For Control Plane node
