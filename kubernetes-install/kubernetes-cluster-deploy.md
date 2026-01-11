@@ -16,6 +16,7 @@ sudo bash -c 'cat > /etc/modules-load.d/containerd.conf <<EOF
 overlay
 br_netfilter
 EOF'
+sudo modprobe overlay br_netfilter
 ```
 
 ```
