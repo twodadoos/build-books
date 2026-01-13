@@ -1,6 +1,8 @@
-# Install and configure NFS services on Rocky Linux
+# Deploy NFS Peristent Storage in Kubernetes
 
-## On NFS server
+## Install and configure NFS services on Rocky Linux
+
+### On NFS server
 
 1.  Update system packages
 ```
@@ -47,13 +49,8 @@ sudo exportfs -rav
 sudo exportfs -v
 ```
 
-**Ensure services start on boot**
+### On NFS clients (**Required on every Kubernetes node hosting pods meant to have NFS access**)
 
-```bash
-sudo systemctl enable nfs-server
-```
-
-## On NFS clients
 1.  Install NFS packages
 #### On Rocky Linux or Red Hat
 ```
@@ -69,9 +66,79 @@ sudo mkdir -p /mnt/nfs/share
 ```
 3. Mount NFS share
 ```
-sudo mount -t nfs 192.168.0.0:/srv/nfs/share/example /mnt/nfs/share
+sudo mount -t nfs 192.168.0.154:/srv/nfs/share/example /mnt/nfs/share
 ```
 4. To make mount permanent edit /etc/fstab file and append
 ```
 192.168.10.205:/srv/nfs/share/example /mnt/nfs/share nfs defaults,_netdev 0 0
 ```
+
+## Deploy NFS CSI storage driver into Kubernetes
+
+### Using kubectl
+```
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/deploy/rbac-csi-nfs.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/deploy/csi-nfs-driverinfo.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/deploy/csi-nfs-controller.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/deploy/csi-nfs-node.yaml
+```
+### Using Helm
+```
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+helm repo update
+
+helm install nfs-csi csi-driver-nfs/csi-driver-nfs \
+  --namespace kube-system
+```
+##### Verify pods running
+```
+kubectl --namespace=kube-system get pods --selector="app.kubernetes.io/instance=nfs-csi"
+```
+
+### Create NFS StorageClass
+```
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-csi
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: <nfs server IP address>
+  share: /example/exported/share
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+mountOptions:
+  - hard
+  - nfsvers=4.1
+```
+
+#### [Optional] Make NFS StorageClass default
+```
+kubectl patch storageclass nfs-csi \
+  -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+```
+
+### Create PersistentVolumeClaim
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-csi
+  resources:
+    requests:
+      storage: 1Gi
+```
+##### Verify PVC is Bound
+```
+kubectl get pvc
+```
+
+Once Bound, there should now be a new, empty directory on the NFS server host, for example:
+```
+pvc-dbdbc367-fdd6-428a-8fa6-91204b55030e
+```
+
